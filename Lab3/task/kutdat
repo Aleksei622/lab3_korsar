@@ -1,0 +1,13 @@
+BEGIN
+    IF TAU == 0 THEN GOTO A ENDIF
+    OUT RESULT.TXT;
+A: END
+END
+
+OUTPUT RESULT.TXT
+    IF FIRST THEN
+        FIRST = 0;
+        WRITE1 'TAU', 'S.VAL1', 'S.VAL2', 'dP_val', 'G_mass';
+    ENDIF
+    WRITE1 TAU, S.VAL1, S.VAL2, dP_val, G_mass;
+END
