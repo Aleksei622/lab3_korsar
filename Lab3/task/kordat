@@ -1,0 +1,152 @@
+restart = 0;
+title = 'VD.035.004 LAB4 (PID FIX)';
+dt_max = 0.1;
+dt_min = 0.1;
+dt_out = 0.1;
+dt_diag = 10.;
+fin_tim = 140.0;      
+
+KP = 0.5;      ! Увеличили коэффициент, чтобы регулятор быстрее реагировал
+KI = 0.05;     ! Увеличили интеграл
+KD = 0.0;
+
+S_PK = 0.0;
+dP_val = 0.0;
+G_mass = 0.0;
+e = 0.0;
+integral = 0.0;
+e_prev = 0.0;
+u_pid = 0.0;   ! Начинаем с нуля
+dP_target = 200000.0; ! 0.2 МПа
+
+LAYOUT
+  BVOL_T1 - CH1/i;
+  CH1(1) - VAL1;
+  CH1(2) - VAL2;
+  CH1(3) - LR1;
+  CH1/o - BVOL_T2;
+END
+
+CALL BVOL_T1;
+CALL BVOL_T2;
+CALL CH1;
+CALL VAL1;
+CALL VAL2;
+CALL LR1;
+
+SET PRE_CALC;
+SET CALC;
+SET SCENARIO;
+OUT Y;
+END
+
+EVENT PRE_CALC
+  TYPE = 3;
+  dP_val = P.CH1(1) - P.CH1(2);
+END
+
+EVENT CALC
+  S_PK = S.VAL1;
+  G_mass = W.CH1(1,1);
+  dP_val = P.CH1(1) - P.CH1(2);
+  
+  ! ПИД РАБОТАЕТ ТОЛЬКО ПОСЛЕ 60 СЕК
+  IF TAU > 60.0 THEN
+    ! Ошибка: если давление больше уставки, ошибка положительная
+    e = (dP_val - dP_target) / dP_target; 
+    
+    ! Интеграл накапливаем только если ошибка не нулевая
+    integral = integral + e * dt_out;
+    
+    ! ВАЖНО: ЗНАК ИЗМЕНЕН. 
+    ! Если dP_val > уставки (e > 0), регулятор должен ОТКРЫВАТЬ клапан (u_pid -> 1.0)
+    u_pid = 1.0 + (KP * e + KI * integral);
+    e_prev = e;
+    
+    ! Ограничение выхода регулятора
+    IF u_pid > 1.0 THEN u_pid = 1.0; ENDIF
+    IF u_pid < 0.0 THEN u_pid = 0.0; ENDIF
+    
+    ! Регулятор управляет ДК (VAL2)
+    S.VAL2 = u_pid;
+  ENDIF
+END
+
+EVENT SCENARIO
+  TYPE = 0;
+  
+  ! ПК плавно открывается от 0 до 1.0 за 60 СЕК
+  S.VAL1 = TAU / 60.0;
+  
+  ! ОГРАНИЧЕНИЕ
+  IF S.VAL1 > 1.0 THEN 
+    S.VAL1 = 1.0; 
+  ENDIF
+  
+  ! ПЕРВАЯ ПОЛОВИНА (0-60): ДК ПОЛНОСТЬЮ ОТКРЫТА
+  IF TAU <= 60.0 THEN
+    S.VAL2 = 1.0;
+  ENDIF
+  
+  CSI1.LR1 = 7.0;
+END
+
+DATA BVOL_T1
+  P=5.5E6;
+  VOID=0.;
+  T=543.15,543.15;
+END
+
+DATA BVOL_T2
+  P=5.0E6;
+  VOID=0.;
+  T=543.15,543.15;
+END
+
+DATA CH1
+  N=3;
+  S(1:3)=0.01;
+  PR(1:3)=0.35;
+  DZ(1)=1.;
+  DZ(2)=1.;
+  DZ(3)=1.;
+  DH(1:3)=0.;
+  ROU(1:3)=1.E-6;
+  TYPE(1:3)=0;
+  P(1:3)=5.5E6;
+  T(1,1:3)=543.15;
+  T(2,1:3)=543.15;
+  VOID(1:3)=0.;
+END
+
+! Уменьшили сопротивление клапанов, чтобы перепад мог упасть до 0.2 МПа
+DATA VAL1
+  K = 3;
+  F(1:K,1) = 0.0, 0.5, 1.0;
+  F(1:K,2) = 0.0, 0.5, 1.0;
+  F(1:K,3) = 0.0, 0.5, 1.0;
+  CSI1 = 5.0;  ! <-- УМЕНЬШЕНО с 9.18
+  CSI2 = 5.0;
+  S = 1.0;
+  LS = 0.0, 1.0;
+END
+
+DATA VAL2
+  K = 3;
+  F(1:K,1) = 0.0, 0.5, 1.0;
+  F(1:K,2) = 0.0, 0.5, 1.0;
+  F(1:K,3) = 0.0, 0.5, 1.0;
+  CSI1 = 10.0;    ! <-- УМЕНЬШЕНО с 25.0
+  CSI2 = 10.0;
+  S = 1.0;
+  LS = 0.0, 1.0;
+END
+
+DATA LR1
+  CSI1 = 7.0;
+  CSI2 = 7.0;
+END
+
+OUTPUT Y
+  WRITE S.VAL1, S.VAL2, G_mass, dP_val;
+END
